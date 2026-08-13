@@ -4,6 +4,14 @@
   "private": true,
   "description": "Reproducible container image for DeepSeek Harness",
   "license": "MIT",
+  "homepage": "https://github.com/AlliotTech/deepseek-harness-docker#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlliotTech/deepseek-harness-docker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AlliotTech/deepseek-harness-docker/issues"
+  },
   "packageManager": "npm@11.6.2",
   "engines": {
     "node": ">=24.0.0"

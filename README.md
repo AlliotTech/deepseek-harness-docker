@@ -1,6 +1,31 @@
 # DeepSeek Harness Docker
 
-本仓库为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 提供非官方 Docker 镜像和双仓库发布流水线。
+[![Build and publish container image](https://github.com/AlliotTech/deepseek-harness-docker/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/AlliotTech/deepseek-harness-docker/actions/workflows/docker-publish.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/alliot/deepseek-harness?logo=docker)](https://hub.docker.com/r/alliot/deepseek-harness)
+
+本仓库为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 提供非官方 Docker 镜像和 GHCR、Docker Hub 双仓库发布流水线。项目源码位于 [AlliotTech/deepseek-harness-docker](https://github.com/AlliotTech/deepseek-harness-docker)。
+
+## 镜像地址
+
+| Registry | 镜像 | 页面 |
+|---|---|---|
+| GitHub Container Registry | `ghcr.io/alliottech/deepseek-harness` | [GitHub Packages](https://github.com/AlliotTech/deepseek-harness-docker/pkgs/container/deepseek-harness) |
+| Docker Hub | `alliot/deepseek-harness` | [Docker Hub](https://hub.docker.com/r/alliot/deepseek-harness) |
+
+两个 Registry 发布相同的 `linux/amd64`、`linux/arm64` OCI manifest。推荐固定 DeepSeek Harness 版本标签部署：
+
+```bash
+docker pull ghcr.io/alliottech/deepseek-harness:dsh-0.1.0-rc.6
+# 或
+docker pull alliot/deepseek-harness:dsh-0.1.0-rc.6
+```
+
+可用标签：
+
+- `dsh-0.1.0-rc.6`：当前上游 DeepSeek Harness 版本，推荐部署使用。
+- `master`：本仓库默认分支的最新构建。
+- `sha-<commit>`：对应本仓库具体 Git commit，例如 `sha-cd8dbd8`。
+- `latest`、SemVer：推送 `v*` 发布标签后生成。
 
 ## 可部署性结论
 
@@ -13,22 +38,23 @@
 
 ## 快速启动
 
-本地构建并使用 Compose：
+使用 Docker Hub 镜像和 Compose：
 
 ```bash
+git clone https://github.com/AlliotTech/deepseek-harness-docker.git
+cd deepseek-harness-docker
 cp .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY；也可以启动后在本地 Web UI 中配置。
-docker compose up --build -d
+docker compose pull
+docker compose up -d
 docker compose logs -f
 ```
 
 浏览器访问 <http://127.0.0.1:3080>。
 
-直接运行镜像：
+直接运行 Docker Hub 镜像：
 
 ```bash
-docker build -t deepseek-harness:local .
-
 docker run --rm -it \
   --name deepseek-harness \
   --security-opt no-new-privileges=true \
@@ -37,10 +63,17 @@ docker run --rm -it \
   -e DEEPSEEK_API_KEY \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  deepseek-harness:local
+  alliot/deepseek-harness:dsh-0.1.0-rc.6
 ```
 
 `/home/node/.dsh` 保存配置、凭据、插件和会话；`/workspace` 是 Agent 默认操作的项目目录。只挂载你允许 Agent 读取和修改的目录。
+
+如需本地构建当前仓库代码：
+
+```bash
+docker build -t deepseek-harness:local .
+DEEPSEEK_HARNESS_IMAGE=deepseek-harness:local docker compose up --build -d
+```
 
 ## Secret 文件
 
@@ -53,7 +86,7 @@ docker run --rm -it \
   --mount type=bind,src="$PWD/deepseek_api_key",dst=/run/secrets/deepseek_api_key,readonly \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  deepseek-harness:local
+  alliot/deepseek-harness:dsh-0.1.0-rc.6
 ```
 
 ## 其他运行模式
@@ -61,9 +94,9 @@ docker run --rm -it \
 查看版本或帮助：
 
 ```bash
-docker run --rm deepseek-harness:local --version
-docker run --rm deepseek-harness:local --help
-docker run --rm deepseek-harness:local web --help
+docker run --rm alliot/deepseek-harness:dsh-0.1.0-rc.6 --version
+docker run --rm alliot/deepseek-harness:dsh-0.1.0-rc.6 --help
+docker run --rm alliot/deepseek-harness:dsh-0.1.0-rc.6 web --help
 ```
 
 运行一次 headless 任务：
@@ -73,7 +106,8 @@ docker run --rm -it \
   -e DEEPSEEK_API_KEY \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  deepseek-harness:local --profile headless "分析当前项目并运行测试"
+  alliot/deepseek-harness:dsh-0.1.0-rc.6 \
+  --profile headless "分析当前项目并运行测试"
 ```
 
 入口规则如下：`web` 或 `dsh web` 使用容器 Web bridge；以 `-` 开头的参数交给 `dsh`；其他命令按原样执行，因此也可以运行 `bash`。
@@ -98,14 +132,14 @@ Web 模式的 `--host` 和 `--port` 由容器入口管理，不能直接传入�
 首选 SSH 本地转发：让容器仍只发布在服务器的回环地址，然后从客户端执行：
 
 ```bash
-ssh -L 3080:127.0.0.1:3080 user@server
+ssh -L 3080:127.0.0.1:3080 deploy@dsh.example.com
 ```
 
-如果必须使用反向代理，代理必须提供可靠的身份认证、正确支持 WebSocket，并通过 `DSH_TRUSTED_HOSTS=your.host.example` 声明浏览器实际使用的 authority。`trustedHosts` 只是防 DNS rebinding 的允许列表，不能替代认证。即使部署在容器中，Agent 仍能完全访问挂载的工作区和容器允许的网络资源。
+上述命令中的 `deploy@dsh.example.com` 仅表示实际服务器的 SSH 用户与地址。如果必须使用反向代理，代理必须提供可靠的身份认证、正确支持 WebSocket，并通过类似 `DSH_TRUSTED_HOSTS=dsh.example.com` 的配置声明浏览器实际使用的 authority。`trustedHosts` 只是防 DNS rebinding 的允许列表，不能替代认证。即使部署在容器中，Agent 仍能完全访问挂载的工作区和容器允许的网络资源。
 
 ## 发布到 GHCR 和 Docker Hub
 
-工作流位于 [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)，行为如下：
+工作流位于 [`.github/workflows/docker-publish.yml`](https://github.com/AlliotTech/deepseek-harness-docker/blob/master/.github/workflows/docker-publish.yml)，行为如下：
 
 - Pull Request：构建 `linux/amd64` 镜像、运行 CLI/Web 健康检查，再验证 `linux/amd64` 和 `linux/arm64` 构建，不推送。
 - `main`/`master` 分支推送：完成验证后推送分支标签、上游版本标签和 commit SHA 标签。
@@ -117,11 +151,16 @@ ssh -L 3080:127.0.0.1:3080 user@server
 
 | 类型 | 名称 | 用途 |
 |---|---|---|
-| Secret | `DOCKERHUB_USERNAME` | Docker Hub 用户名。 |
+| Secret | `DOCKERHUB_USERNAME` | Docker Hub 用户名，本仓库配置为 `alliot`。 |
 | Secret | `DOCKERHUB_TOKEN` | Docker Hub access token，不要使用账户密码。 |
 | Variable（可选） | `DOCKERHUB_REPOSITORY` | Docker Hub 仓库名，默认 `deepseek-harness`。 |
 
-GHCR 使用 GitHub 自动提供的 `GITHUB_TOKEN`，工作流已经声明 `packages: write`。首次发布后，可在 GitHub Package 设置中把包可见性改为 Public，并把包关联到本仓库。Docker Hub 仓库需要提前创建，并授予 token Read & Write 权限。
+本仓库发布到：
+
+- GHCR：`ghcr.io/alliottech/deepseek-harness`
+- Docker Hub：`alliot/deepseek-harness`
+
+GHCR 使用 GitHub 自动提供的 `GITHUB_TOKEN`，工作流已经声明 `packages: write`。首次发布后，可在 [GitHub Package 设置](https://github.com/AlliotTech/deepseek-harness-docker/pkgs/container/deepseek-harness/settings)中把包可见性改为 Public，并把包关联到本仓库。Docker Hub token 需要拥有 `alliot/deepseek-harness` 的 Read & Write 权限。
 
 推荐用与上游版本对应的 Git tag 发布，例如：
 
@@ -137,7 +176,7 @@ git push origin v0.1.0-rc.6
 默认镜像只附带 DeepSeek Harness 所需的 Node.js，以及 `bash`、Git、OpenSSH client 和 ripgrep。按项目需要派生镜像：
 
 ```dockerfile
-FROM ghcr.io/your-org/deepseek-harness:latest
+FROM ghcr.io/alliottech/deepseek-harness:dsh-0.1.0-rc.6
 
 USER root
 RUN apt-get update \

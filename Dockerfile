@@ -31,13 +31,15 @@ ARG BUILD_DATE=""
 
 LABEL org.opencontainers.image.title="DeepSeek Harness" \
       org.opencontainers.image.description="Unofficial, production-oriented container image for DeepSeek Harness" \
-      org.opencontainers.image.url="https://github.com/deepseek-ai/deepseek-harness" \
-      org.opencontainers.image.documentation="https://github.com/deepseek-ai/deepseek-harness" \
-      org.opencontainers.image.source="https://github.com/deepseek-ai/deepseek-harness" \
+      org.opencontainers.image.url="https://github.com/AlliotTech/deepseek-harness-docker" \
+      org.opencontainers.image.documentation="https://github.com/AlliotTech/deepseek-harness-docker#readme" \
+      org.opencontainers.image.source="https://github.com/AlliotTech/deepseek-harness-docker" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${DSH_VERSION}" \
       org.opencontainers.image.revision="${VCS_REF}" \
-      org.opencontainers.image.created="${BUILD_DATE}"
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      io.deepseek-harness.upstream.source="https://github.com/deepseek-ai/deepseek-harness" \
+      io.deepseek-harness.upstream.version="${DSH_VERSION}"
 
 # Keep the runtime small but useful for the built-in coding-agent tools.
 RUN apt-get update \

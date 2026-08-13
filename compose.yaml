@@ -4,7 +4,7 @@ services:
   deepseek-harness:
     build:
       context: .
-    image: ${DEEPSEEK_HARNESS_IMAGE:-deepseek-harness:local}
+    image: ${DEEPSEEK_HARNESS_IMAGE:-alliot/deepseek-harness:dsh-0.1.0-rc.6}
     restart: unless-stopped
     ports:
       # DeepSeek Harness has no authentication and can execute commands. Keep
