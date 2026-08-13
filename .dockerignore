@@ -1,0 +1,6 @@
+*
+!Dockerfile
+!package.json
+!package-lock.json
+!docker-entrypoint.mjs
+!LICENSE

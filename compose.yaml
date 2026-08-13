@@ -1,0 +1,31 @@
+name: deepseek-harness
+
+services:
+  deepseek-harness:
+    build:
+      context: .
+    image: ${DEEPSEEK_HARNESS_IMAGE:-deepseek-harness:local}
+    restart: unless-stopped
+    ports:
+      # DeepSeek Harness has no authentication and can execute commands. Keep
+      # the published port on the Docker host's loopback interface.
+      - "127.0.0.1:${DSH_HOST_PORT:-3080}:3080"
+    environment:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DSH_TELEMETRY_DISABLED: ${DSH_TELEMETRY_DISABLED-1}
+    volumes:
+      - dsh-home:/home/node/.dsh
+      - type: bind
+        source: ${DSH_WORKSPACE:-.}
+        target: /workspace
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=1g
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 10s
+
+volumes:
+  dsh-home:

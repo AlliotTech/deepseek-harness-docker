@@ -1,0 +1,15 @@
+{
+  "name": "deepseek-harness-docker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reproducible container image for DeepSeek Harness",
+  "license": "MIT",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.0-rc.6",
+    "pnpm": "11.7.0"
+  }
+}

@@ -1,0 +1,182 @@
+name: Build and publish container image
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Push the image to GHCR and Docker Hub
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  image:
+    name: Build, test, and publish
+    runs-on: ubuntu-24.04
+    env:
+      TEST_IMAGE: deepseek-harness:ci
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Resolve build settings
+        id: settings
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_REPOSITORY: ${{ vars.DOCKERHUB_REPOSITORY }}
+        run: |
+          set -euo pipefail
+
+          dsh_version=$(node --print "require('./package.json').dependencies['@deepseek-ai/dsh']")
+          ghcr_image=$(printf '%s' "ghcr.io/${GITHUB_REPOSITORY_OWNER}/deepseek-harness" | tr '[:upper:]' '[:lower:]')
+          dockerhub_enabled=false
+          dockerhub_image=""
+
+          if [[ -n "$DOCKERHUB_USERNAME" && -n "$DOCKERHUB_TOKEN" ]]; then
+            dockerhub_repository=${DOCKERHUB_REPOSITORY:-deepseek-harness}
+            dockerhub_image=$(printf '%s/%s' "$DOCKERHUB_USERNAME" "$dockerhub_repository" | tr '[:upper:]' '[:lower:]')
+            dockerhub_enabled=true
+          elif [[ -n "$DOCKERHUB_USERNAME" || -n "$DOCKERHUB_TOKEN" ]]; then
+            echo "::warning::Docker Hub publish is disabled because both DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are required."
+          else
+            echo "::notice::Docker Hub credentials are not configured; this run will publish only to GHCR."
+          fi
+
+          {
+            echo "dsh_version=$dsh_version"
+            echo "ghcr_image=$ghcr_image"
+            echo "dockerhub_enabled=$dockerhub_enabled"
+            echo "images<<EOF"
+            echo "$ghcr_image"
+            if [[ -n "$dockerhub_image" ]]; then echo "$dockerhub_image"; fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to publish
+        id: publish
+        shell: bash
+        env:
+          MANUAL_PUBLISH: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          enabled=false
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            enabled=true
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$MANUAL_PUBLISH" == "true" ]]; then
+            enabled=true
+          fi
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Generate image metadata
+        id: metadata
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ steps.settings.outputs.images }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=dsh-${{ steps.settings.outputs.dsh_version }}
+            type=sha,prefix=sha-
+          labels: |
+            org.opencontainers.image.title=DeepSeek Harness
+            org.opencontainers.image.description=Unofficial container image for DeepSeek Harness
+            org.opencontainers.image.licenses=MIT
+            io.deepseek-harness.upstream.version=${{ steps.settings.outputs.dsh_version }}
+
+      - name: Build local smoke-test image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          tags: ${{ env.TEST_IMAGE }}
+          build-args: |
+            DSH_VERSION=${{ steps.settings.outputs.dsh_version }}
+            VCS_REF=${{ github.sha }}
+          cache-from: type=gha,scope=deepseek-harness
+          cache-to: type=gha,mode=max,scope=deepseek-harness
+
+      - name: Smoke test image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm "$TEST_IMAGE" --version
+
+          container=deepseek-harness-smoke
+          cleanup() {
+            docker logs "$container" 2>/dev/null || true
+            docker rm --force "$container" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run --detach --name "$container" "$TEST_IMAGE"
+          for attempt in {1..18}; do
+            status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container")
+            if [[ "$status" == "healthy" ]]; then
+              exit 0
+            fi
+            if [[ "$status" == "unhealthy" || "$(docker inspect --format '{{.State.Running}}' "$container")" != "true" ]]; then
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "Container did not become healthy" >&2
+          exit 1
+
+      - name: Log in to GHCR
+        if: steps.publish.outputs.enabled == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: steps.publish.outputs.enabled == 'true' && steps.settings.outputs.dockerhub_enabled == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and optionally publish multi-platform image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ steps.publish.outputs.enabled == 'true' }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            DSH_VERSION=${{ steps.settings.outputs.dsh_version }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ fromJSON(steps.metadata.outputs.json).labels['org.opencontainers.image.created'] }}
+          cache-from: type=gha,scope=deepseek-harness
+          cache-to: type=gha,mode=max,scope=deepseek-harness
+          provenance: mode=max
+          sbom: true
