@@ -135,19 +135,37 @@ jobs:
           }
           trap cleanup EXIT
 
-          docker run --detach --name "$container" "$TEST_IMAGE"
+          docker run --detach --name "$container" --publish 127.0.0.1::3080 "$TEST_IMAGE"
+          healthy=false
           for attempt in {1..18}; do
             status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container")
             if [[ "$status" == "healthy" ]]; then
-              exit 0
+              healthy=true
+              break
             fi
             if [[ "$status" == "unhealthy" || "$(docker inspect --format '{{.State.Running}}' "$container")" != "true" ]]; then
               exit 1
             fi
             sleep 5
           done
-          echo "Container did not become healthy" >&2
-          exit 1
+          if [[ "$healthy" != "true" ]]; then
+            echo "Container did not become healthy" >&2
+            exit 1
+          fi
+
+          host_port=$(docker port "$container" 3080/tcp | awk -F: 'NR == 1 { print $NF }')
+          for attempt in {1..10}; do
+            if [[ "$(docker inspect --format '{{.State.Running}}' "$container")" != "true" ]]; then
+              echo "Container exited after becoming healthy" >&2
+              exit 1
+            fi
+            if [[ "$(docker inspect --format '{{.State.Health.Status}}' "$container")" != "healthy" ]]; then
+              echo "Container lost healthy status" >&2
+              exit 1
+            fi
+            curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${host_port}/" >/dev/null
+            sleep 2
+          done
 
       - name: Log in to GHCR
         if: steps.publish.outputs.enabled == 'true'

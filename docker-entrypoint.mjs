@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process'
 
 const DEFAULT_PUBLIC_PORT = 3080
 const DEFAULT_INTERNAL_PORT = 3081
+const DSH_CLI = '/opt/deepseek-harness/node_modules/@deepseek-ai/dsh/lib/bin.js'
 const SHUTDOWN_TIMEOUT_MS = 7000
 
 function fail(message) {
@@ -70,7 +71,7 @@ function trustedHostArgs() {
 
 function runWeb(webArgs) {
   if (webArgs.includes('--help') || webArgs.includes('-h')) {
-    runChild('dsh', ['web', ...webArgs])
+    runChild(process.execPath, ['--expose-internals', DSH_CLI, 'web', ...webArgs])
     return
   }
   if (containsManagedWebFlag(webArgs)) {
@@ -83,7 +84,12 @@ function runWeb(webArgs) {
 
   loadSecretFile('DEEPSEEK_API_KEY', 'DEEPSEEK_API_KEY_FILE')
 
-  const child = spawn('dsh', [
+  // The HMR service used by `dsh web` accesses Node internals. Invoking the
+  // package's shebang through `dsh` would start a fresh Node process without
+  // this required runtime flag, so launch the CLI with Node explicitly.
+  const child = spawn(process.execPath, [
+    '--expose-internals',
+    DSH_CLI,
     'web',
     '--port',
     String(internalPort),
@@ -135,7 +141,7 @@ function runWeb(webArgs) {
   }
 
   child.once('error', (error) => {
-    console.error(`deepseek-harness-docker: cannot start dsh: ${error.message}`)
+    console.error(`deepseek-harness-docker: cannot start dsh web: ${error.message}`)
     closeProxy()
     process.exit(1)
   })
