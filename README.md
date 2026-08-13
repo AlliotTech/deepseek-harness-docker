@@ -12,20 +12,24 @@
 | GitHub Container Registry | `ghcr.io/alliottech/deepseek-harness` | [GitHub Packages](https://github.com/AlliotTech/deepseek-harness-docker/pkgs/container/deepseek-harness) |
 | Docker Hub | `alliot/deepseek-harness` | [Docker Hub](https://hub.docker.com/r/alliot/deepseek-harness) |
 
-两个 Registry 发布相同的 `linux/amd64`、`linux/arm64` OCI manifest。推荐固定 DeepSeek Harness 版本标签部署：
+两个 Registry 发布相同的 `linux/amd64`、`linux/arm64` OCI manifest。推荐固定容器发行版标签部署：
 
 ```bash
-docker pull ghcr.io/alliottech/deepseek-harness:dsh-0.1.0-rc.6
+docker pull ghcr.io/alliottech/deepseek-harness:0.1.0-rc.6.1
 # 或
-docker pull alliot/deepseek-harness:dsh-0.1.0-rc.6
+docker pull alliot/deepseek-harness:0.1.0-rc.6.1
 ```
 
 可用标签：
 
-- `dsh-0.1.0-rc.6`：当前上游 DeepSeek Harness 版本，推荐部署使用。
-- `master`：本仓库默认分支的最新构建。
-- `sha-<commit>`：对应本仓库具体 Git commit，例如 `sha-cd8dbd8`。
-- `latest`、SemVer：推送 `v*` 发布标签后生成。
+- `0.1.0-rc.6.1`：容器发行版；使用上游 DeepSeek Harness `0.1.0-rc.6`，并包含 Web 启动修复，推荐部署使用。
+- `dsh-0.1.0-rc.6`：使用该上游版本的最新容器构建；包装层修复发布时会更新，是可变标签。
+- `master`：本仓库默认分支的最新构建，是可变标签。
+- `sha-<commit>`：对应本仓库具体 Git commit，例如包含 Web 启动修复的 `sha-6ed1d92`。
+- `latest`：最新 `v*` 容器发行版；方便试用，但严格固定部署应使用完整发行版标签或 digest。
+
+> [!IMPORTANT]
+> 早期的 `0.1.0-rc.6` 容器发行版存在 Web 子进程缺少 `--expose-internals` 的启动缺陷，请改用 `0.1.0-rc.6.1`。如果此前拉取过同名的 `dsh-0.1.0-rc.6` 或 `master` 可变标签，需要重新执行 `docker pull` 并重建容器，Docker 不会自动替换本地旧镜像。
 
 ## 可部署性结论
 
@@ -63,10 +67,24 @@ docker run --rm -it \
   -e DEEPSEEK_API_KEY \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  alliot/deepseek-harness:dsh-0.1.0-rc.6
+  alliot/deepseek-harness:0.1.0-rc.6.1
 ```
 
 `/home/node/.dsh` 保存配置、凭据、插件和会话；`/workspace` 是 Agent 默认操作的项目目录。只挂载你允许 Agent 读取和修改的目录。
+
+升级已有 Compose 部署：
+
+```bash
+docker compose pull
+docker compose up -d --force-recreate
+docker compose ps
+```
+
+如果使用 `docker run`，先重新拉取所用标签，再删除并按原参数重建容器。可通过日志确认旧启动缺陷：
+
+```text
+--expose-internals is required for HMR service
+```
 
 如需本地构建当前仓库代码：
 
@@ -86,7 +104,7 @@ docker run --rm -it \
   --mount type=bind,src="$PWD/deepseek_api_key",dst=/run/secrets/deepseek_api_key,readonly \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  alliot/deepseek-harness:dsh-0.1.0-rc.6
+  alliot/deepseek-harness:0.1.0-rc.6.1
 ```
 
 ## 其他运行模式
@@ -94,9 +112,9 @@ docker run --rm -it \
 查看版本或帮助：
 
 ```bash
-docker run --rm alliot/deepseek-harness:dsh-0.1.0-rc.6 --version
-docker run --rm alliot/deepseek-harness:dsh-0.1.0-rc.6 --help
-docker run --rm alliot/deepseek-harness:dsh-0.1.0-rc.6 web --help
+docker run --rm alliot/deepseek-harness:0.1.0-rc.6.1 --version
+docker run --rm alliot/deepseek-harness:0.1.0-rc.6.1 --help
+docker run --rm alliot/deepseek-harness:0.1.0-rc.6.1 web --help
 ```
 
 运行一次 headless 任务：
@@ -106,7 +124,7 @@ docker run --rm -it \
   -e DEEPSEEK_API_KEY \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  alliot/deepseek-harness:dsh-0.1.0-rc.6 \
+  alliot/deepseek-harness:0.1.0-rc.6.1 \
   --profile headless "分析当前项目并运行测试"
 ```
 
@@ -135,13 +153,32 @@ Web 模式的 `--host` 和 `--port` 由容器入口管理，不能直接传入�
 ssh -L 3080:127.0.0.1:3080 deploy@dsh.example.com
 ```
 
-上述命令中的 `deploy@dsh.example.com` 仅表示实际服务器的 SSH 用户与地址。如果必须使用反向代理，代理必须提供可靠的身份认证、正确支持 WebSocket，并通过类似 `DSH_TRUSTED_HOSTS=dsh.example.com` 的配置声明浏览器实际使用的 authority。`trustedHosts` 只是防 DNS rebinding 的允许列表，不能替代认证。即使部署在容器中，Agent 仍能完全访问挂载的工作区和容器允许的网络资源。
+上述命令中的 `deploy@dsh.example.com` 仅表示实际服务器的 SSH 用户与地址。
+
+如果必须使用反向代理，代理必须提供可靠的身份认证并正确支持 WebSocket。还需要把浏览器访问时的 authority 显式加入信任列表，否则首页可能正常打开，但 `/api/*` 会返回 HTTP 403：
+
+```bash
+# .env（Compose）
+DSH_TRUSTED_HOSTS=dsh.example.com
+
+# 或 docker run
+docker run --rm -it \
+  -p 127.0.0.1:3080:3080 \
+  -e DSH_TRUSTED_HOSTS=dsh.example.com \
+  -v deepseek-harness-home:/home/node/.dsh \
+  -v "$PWD:/workspace" \
+  alliot/deepseek-harness:0.1.0-rc.6.1
+```
+
+值只能是逗号分隔的 `host` 或 `host:port`，不要填写 `https://`、路径或通配符。无端口的 hostname 可匹配该主机的任意端口；例如 `DSH_TRUSTED_HOSTS=dsh.example.com,192.168.1.20`。反向代理应保留原始 `Host`，例如 Nginx 使用 `proxy_set_header Host $host;`。
+
+`DSH_TRUSTED_HOSTS` 是防 DNS rebinding 的允许列表，不是身份认证机制。即使部署在容器中，Agent 仍能完全访问挂载的工作区和容器允许的网络资源。
 
 ## 发布到 GHCR 和 Docker Hub
 
 工作流位于 [`.github/workflows/docker-publish.yml`](https://github.com/AlliotTech/deepseek-harness-docker/blob/master/.github/workflows/docker-publish.yml)，行为如下：
 
-- Pull Request：构建 `linux/amd64` 镜像、运行 CLI/Web 健康检查，再验证 `linux/amd64` 和 `linux/arm64` 构建，不推送。
+- Pull Request：构建 `linux/amd64` 镜像，验证 CLI 版本，等待 Web 容器 healthy，调用受信 Host 下的 `agentPreset.list` API、确认未受信 Host 仍返回 403，并持续执行真实 HTTP 请求、确认容器没有退出；随后验证 `linux/amd64` 和 `linux/arm64` 构建，不推送。
 - `main`/`master` 分支推送：完成验证后推送分支标签、上游版本标签和 commit SHA 标签。
 - `v*` Git tag：额外生成 SemVer 标签和 `latest`。
 - 手动运行：只有把 `publish` 设为 `true` 才推送。
@@ -162,11 +199,11 @@ ssh -L 3080:127.0.0.1:3080 deploy@dsh.example.com
 
 GHCR 使用 GitHub 自动提供的 `GITHUB_TOKEN`，工作流已经声明 `packages: write`。首次发布后，可在 [GitHub Package 设置](https://github.com/AlliotTech/deepseek-harness-docker/pkgs/container/deepseek-harness/settings)中把包可见性改为 Public，并把包关联到本仓库。Docker Hub token 需要拥有 `alliot/deepseek-harness` 的 Read & Write 权限。
 
-推荐用与上游版本对应的 Git tag 发布，例如：
+容器发行版使用 SemVer。上游预发布版本保持在前缀中，最后一位表示本仓库的容器包装修订，例如：
 
 ```bash
-git tag v0.1.0-rc.6
-git push origin v0.1.0-rc.6
+git tag -a v0.1.0-rc.6.1 -m "DeepSeek Harness 0.1.0-rc.6 container revision 1"
+git push origin v0.1.0-rc.6.1
 ```
 
 更新上游版本时，同时修改 `package.json`、`package-lock.json` 和 Dockerfile 中的 `DSH_VERSION` 默认值，然后完成本地镜像健康检查。Dependabot 已配置为跟踪 npm、基础镜像和 GitHub Actions 更新。
@@ -176,7 +213,7 @@ git push origin v0.1.0-rc.6
 默认镜像只附带 DeepSeek Harness 所需的 Node.js，以及 `bash`、Git、OpenSSH client 和 ripgrep。按项目需要派生镜像：
 
 ```dockerfile
-FROM ghcr.io/alliottech/deepseek-harness:dsh-0.1.0-rc.6
+FROM ghcr.io/alliottech/deepseek-harness:0.1.0-rc.6.1
 
 USER root
 RUN apt-get update \

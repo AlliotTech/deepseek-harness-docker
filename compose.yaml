@@ -4,7 +4,7 @@ services:
   deepseek-harness:
     build:
       context: .
-    image: ${DEEPSEEK_HARNESS_IMAGE:-alliot/deepseek-harness:dsh-0.1.0-rc.6}
+    image: ${DEEPSEEK_HARNESS_IMAGE:-alliot/deepseek-harness:0.1.0-rc.6.1}
     restart: unless-stopped
     ports:
       # DeepSeek Harness has no authentication and can execute commands. Keep
@@ -12,6 +12,7 @@ services:
       - "127.0.0.1:${DSH_HOST_PORT:-3080}:3080"
     environment:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DSH_TRUSTED_HOSTS: ${DSH_TRUSTED_HOSTS:-}
       DSH_TELEMETRY_DISABLED: ${DSH_TELEMETRY_DISABLED-1}
     volumes:
       - dsh-home:/home/node/.dsh

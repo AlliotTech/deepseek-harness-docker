@@ -135,7 +135,11 @@ jobs:
           }
           trap cleanup EXIT
 
-          docker run --detach --name "$container" --publish 127.0.0.1::3080 "$TEST_IMAGE"
+          docker run --detach \
+            --name "$container" \
+            --publish 127.0.0.1::3080 \
+            --env DSH_TRUSTED_HOSTS=dsh-smoke.example \
+            "$TEST_IMAGE"
           healthy=false
           for attempt in {1..18}; do
             status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container")
@@ -154,6 +158,32 @@ jobs:
           fi
 
           host_port=$(docker port "$container" 3080/tcp | awk -F: 'NR == 1 { print $NF }')
+          rpc_body='{"type":"client-request","rpcId":"11111111-1111-4111-8111-111111111111","method":"agentPreset.list","payload":{}}'
+          rpc_response=$(curl --fail --silent --show-error --max-time 5 \
+            --header 'Host: dsh-smoke.example' \
+            --header 'Origin: https://dsh-smoke.example' \
+            --header 'Sec-Fetch-Site: same-origin' \
+            --header 'Content-Type: application/json' \
+            --data "$rpc_body" \
+            "http://127.0.0.1:${host_port}/api/agentPreset.list")
+          jq --exit-status \
+            '.type == "server-response" and .rpcId == "11111111-1111-4111-8111-111111111111" and .result.ok == true' \
+            <<<"$rpc_response" >/dev/null
+
+          untrusted_status=$(curl --silent --show-error --max-time 5 \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            --header 'Host: untrusted.example' \
+            --header 'Origin: https://untrusted.example' \
+            --header 'Sec-Fetch-Site: same-origin' \
+            --header 'Content-Type: application/json' \
+            --data "$rpc_body" \
+            "http://127.0.0.1:${host_port}/api/agentPreset.list")
+          if [[ "$untrusted_status" != "403" ]]; then
+            echo "Untrusted Host was not rejected: HTTP $untrusted_status" >&2
+            exit 1
+          fi
+
           for attempt in {1..10}; do
             if [[ "$(docker inspect --format '{{.State.Running}}' "$container")" != "true" ]]; then
               echo "Container exited after becoming healthy" >&2
