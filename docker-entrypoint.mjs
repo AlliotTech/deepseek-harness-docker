@@ -69,6 +69,22 @@ function trustedHostArgs() {
   return authorities.length === 0 ? [] : ['--trusted-host', ...authorities]
 }
 
+function normalizeBooleanEnvironment(name) {
+  const raw = process.env[name]
+  if (raw === undefined || raw.trim() === '') return false
+
+  const normalized = raw.trim().toLowerCase()
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    process.env[name] = '1'
+    return true
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    process.env[name] = '0'
+    return false
+  }
+  fail(`${name} must be a boolean (1/0, true/false, yes/no, or on/off)`)
+}
+
 function runWeb(webArgs) {
   if (webArgs.includes('--help') || webArgs.includes('-h')) {
     runChild(process.execPath, ['--expose-internals', DSH_CLI, 'web', ...webArgs])
@@ -83,6 +99,14 @@ function runWeb(webArgs) {
   if (publicPort === internalPort) fail('DSH_PORT and DSH_INTERNAL_PORT must be different')
 
   loadSecretFile('DEEPSEEK_API_KEY', 'DEEPSEEK_API_KEY_FILE')
+  const trustedArgs = trustedHostArgs()
+  const allowRemoteConfiguration = normalizeBooleanEnvironment('DSH_ALLOW_REMOTE_CONFIGURATION')
+  if (allowRemoteConfiguration && trustedArgs.length === 0) {
+    fail('DSH_ALLOW_REMOTE_CONFIGURATION requires at least one DSH_TRUSTED_HOSTS authority')
+  }
+  if (allowRemoteConfiguration) {
+    console.warn('deepseek-harness-docker: remote provider configuration is enabled; require authentication and HTTPS at the reverse proxy')
+  }
 
   // The HMR service used by `dsh web` accesses Node internals. Invoking the
   // package's shebang through `dsh` would start a fresh Node process without
@@ -94,7 +118,7 @@ function runWeb(webArgs) {
     '--port',
     String(internalPort),
     ...webArgs,
-    ...trustedHostArgs(),
+    ...trustedArgs,
   ], {
     cwd: process.cwd(),
     env: process.env,

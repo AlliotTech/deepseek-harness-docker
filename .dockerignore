@@ -3,4 +3,6 @@
 !package.json
 !package-lock.json
 !docker-entrypoint.mjs
+!patches/
+!patches/enable-remote-configuration.mjs
 !LICENSE

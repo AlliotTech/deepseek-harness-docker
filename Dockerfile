@@ -23,6 +23,14 @@ RUN test "$(node --print "require('./package.json').dependencies['@deepseek-ai/d
     && npm ci --omit=dev --no-audit --no-fund \
     && npm cache clean --force
 
+# Upstream keeps configuration RPCs loopback-only even when an authenticated
+# reverse proxy authority is trusted. Apply a version-checked, fail-closed
+# compatibility patch that can expose only the provider configuration plane
+# when the operator explicitly opts in at runtime.
+COPY patches/enable-remote-configuration.mjs ./patches/enable-remote-configuration.mjs
+RUN node ./patches/enable-remote-configuration.mjs /opt/deepseek-harness \
+    && rm -rf ./patches
+
 FROM ${NODE_IMAGE} AS runtime
 
 ARG DSH_VERSION=0.1.0-rc.6
