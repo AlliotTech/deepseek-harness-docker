@@ -1,5 +1,7 @@
 # DeepSeek Harness Docker
 
+> [**English Documentation**](README-en.md)
+
 [![Build and publish container image](https://github.com/AlliotTech/deepseek-harness-docker/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/AlliotTech/deepseek-harness-docker/actions/workflows/docker-publish.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/alliot/deepseek-harness?logo=docker)](https://hub.docker.com/r/alliot/deepseek-harness)
 
