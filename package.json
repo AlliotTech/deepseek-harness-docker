@@ -17,7 +17,7 @@
     "node": ">=24.0.0"
   },
   "dependencies": {
-    "@deepseek-ai/dsh": "0.1.0-rc.6",
-    "pnpm": "11.22.0"
+    "@deepseek-ai/dsh": "0.1.0-rc.8",
+    "pnpm": "11.24.0"
   }
 }
