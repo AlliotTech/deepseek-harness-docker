@@ -183,6 +183,27 @@ Values must be comma-separated `host` or `host:port` entries — no `https://` s
 
 Once enabled, the reverse proxy must authenticate users first; otherwise anyone who can reach the domain can read or modify the Harness configuration, write credentials, and have the host issue model discovery requests. Even when deployed in a container, the Agent still has full access to the mounted workspace and any network resources the container can reach.
 
+## Sandbox and Workspace Write (bwrap error)
+
+When an operation needs to write files, you may see an error like:
+
+```text
+sandbox mode "workspace-write" is requested but no sandbox backend is usable on this host; refusing to run the command unconfined ... bwrap: Can't mount proc on /newroot/proc: Operation not permitted
+```
+
+Cause: the DSH `read-only` / `workspace-write` modes rely on a process-level sandbox (bubblewrap/`bwrap` on Linux). This image intentionally makes the **container itself** the isolation boundary — a `read_only` root filesystem, `cap_drop: ALL`, and `no-new-privileges` — and does not install `bwrap`. `bwrap` needs to mount a fresh `procfs` inside a new user/PID namespace, which requires privileges the container deliberately drops, so mounting `/proc` returns `Operation not permitted`.
+
+Fix: run the Agent in `danger-full-access` inside the container — the container is the sandbox, so there is no need to nest `bwrap`. Edit the persistent `/home/node/.dsh/settings.yaml` (the `dsh-home` volume) to set the default permission preset:
+
+```yaml
+permissionPresets:
+  defaultPreset: danger-full-access
+```
+
+New sessions then start in `danger-full-access` and never invoke `bwrap`. You can also switch it in the Web UI permission selector, or run `/permissionPresets danger-full-access` in a session (affects the current session only).
+
+`danger-full-access` means the Agent is no longer confined by a process-level file sandbox inside the container; isolation is provided entirely by the container boundary. Only mount directories you are willing to let the Agent read and write. Do not relax the container hardening (for example `seccomp=unconfined` or `CAP_SYS_ADMIN`) just to make `bwrap` work — that would weaken the real isolation the container provides.
+
 ## Publishing to GHCR and Docker Hub
 
 The workflow is in [`.github/workflows/docker-publish.yml`](https://github.com/AlliotTech/deepseek-harness-docker/blob/master/.github/workflows/docker-publish.yml) and behaves as follows:
