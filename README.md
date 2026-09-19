@@ -183,6 +183,27 @@ docker run --rm -it \
 
 开启后，反向代理必须先完成用户认证；否则能访问该域名的人可以读取或修改 Harness 配置、写入凭据，并让宿主机执行模型发现请求。即使部署在容器中，Agent 仍能完全访问挂载的工作区和容器允许的网络资源。
 
+## 沙箱与工作区写入（bwrap 报错）
+
+使用需要写文件的操作时，可能看到类似报错：
+
+```text
+sandbox mode "workspace-write" is requested but no sandbox backend is usable on this host; refusing to run the command unconfined ... bwrap: Can't mount proc on /newroot/proc: Operation not permitted
+```
+
+原因：DSH 的 `read-only` / `workspace-write` 模式依赖进程级沙箱（Linux 上是 bubblewrap/`bwrap`）。本镜像有意把**容器本身**作为隔离边界——根文件系统 `read_only`、`cap_drop: ALL`、`no-new-privileges`——并且不安装 `bwrap`。`bwrap` 需要在新的用户/PID 命名空间里挂载一个新的 `procfs`，这要求容器保留相应权限；上述加固恰好禁止了它，所以挂载 `/proc` 返回 `Operation not permitted`。
+
+解决办法：在容器内用 `danger-full-access` 运行 Agent——容器就是沙箱，无需再叠加 `bwrap`。编辑持久化的 `/home/node/.dsh/settings.yaml`（即 `dsh-home` 卷），设置默认权限预设：
+
+```yaml
+permissionPresets:
+  defaultPreset: danger-full-access
+```
+
+此后新建会话即以 `danger-full-access` 启动，不再调用 `bwrap`。也可以在 Web UI 的权限选择器切换，或在会话中执行 `/permissionPresets danger-full-access`（仅影响当前会话）。
+
+`danger-full-access` 表示 Agent 在容器内不再受进程级文件沙箱限制，隔离完全由容器边界提供。因此只挂载你允许 Agent 读写的目录。不建议为了让 `bwrap` 工作而放开容器加固（如 `seccomp=unconfined`、`CAP_SYS_ADMIN`），那会削弱容器这层真正的隔离。
+
 ## 发布到 GHCR 和 Docker Hub
 
 工作流位于 [`.github/workflows/docker-publish.yml`](https://github.com/AlliotTech/deepseek-harness-docker/blob/master/.github/workflows/docker-publish.yml)，行为如下：
