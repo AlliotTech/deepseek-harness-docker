@@ -18,7 +18,7 @@ RUN apt-get update \
 
 COPY package.json package-lock.json ./
 
-ARG DSH_VERSION=0.1.0-rc.8
+ARG DSH_VERSION=0.2.0-rc.2
 RUN test "$(node --print "require('./package.json').dependencies['@deepseek-ai/dsh']")" = "${DSH_VERSION}" \
     && npm ci --omit=dev --no-audit --no-fund \
     && npm cache clean --force
@@ -33,7 +33,7 @@ RUN node ./patches/enable-remote-configuration.mjs /opt/deepseek-harness \
 
 FROM ${NODE_IMAGE} AS runtime
 
-ARG DSH_VERSION=0.1.0-rc.8
+ARG DSH_VERSION=0.2.0-rc.2
 ARG VCS_REF=""
 ARG BUILD_DATE=""
 
@@ -85,8 +85,11 @@ USER node
 
 EXPOSE 3080
 
+# The web server requires browser authentication since upstream 0.2.0: an
+# unauthenticated GET / answers 401 once the full stack is serving, so any
+# HTTP response means healthy and only a connection failure means unhealthy.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
-  CMD ["node", "-e", "const p=process.env.DSH_PORT||'3080';fetch('http://127.0.0.1:'+p+'/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+  CMD ["node", "-e", "const p=process.env.DSH_PORT||'3080';fetch('http://127.0.0.1:'+p+'/').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
 
 ENTRYPOINT ["tini", "--", "node", "/usr/local/bin/docker-entrypoint.mjs"]
 CMD ["web"]
