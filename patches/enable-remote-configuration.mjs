@@ -37,12 +37,6 @@ const REMOTE_CONFIGURATION_METHODS = [
   'llm/discoverModels',
 ]
 
-const LOOPBACK_ONLY_METHODS = [
-  'settings/openSettingsDocument',
-  'directoryPicker/pick',
-  'agentPresets/read',
-]
-
 const LOOPBACK_ONLY_PATH_PREFIXES = ['/open-in-app/']
 
 function setLiteral(values) {
@@ -73,7 +67,6 @@ function patchFile(relativeTarget, replacements) {
 
 const connectionHelpers = `/* deepseek-harness-docker: controlled remote configuration (fail-closed). */
 const DSH_REMOTE_CONFIGURATION_METHODS = ${setLiteral(REMOTE_CONFIGURATION_METHODS)};
-const DSH_LOOPBACK_ONLY_METHODS = ${setLiteral(LOOPBACK_ONLY_METHODS)};
 const DSH_LOOPBACK_ONLY_PATH_PREFIXES = ${arrayLiteral(LOOPBACK_ONLY_PATH_PREFIXES)};
 const DSH_REMOTE_RESTRICTED = Symbol.for("deepseek-harness-docker.remote-restricted");
 const DSH_REMOTE_PEER = Symbol.for("deepseek-harness-docker.remote-peer");
@@ -105,7 +98,7 @@ function dshRemoteRequestForbidden(request) {
 \tif (DSH_REMOTE_CONFIGURATION_METHODS.has(endpoint)) {
 \t\treturn process.env.DSH_ALLOW_REMOTE_CONFIGURATION !== "1";
 \t}
-\treturn DSH_LOOPBACK_ONLY_METHODS.has(endpoint);
+\t// Fail-closed: a trusted non-loopback host reaches only the provider\n\t// configuration plane (plus the stream carrier, handled above). Every\n\t// other endpoint stays loopback-only even when not enumerated here.\n\treturn true;
 }
 /** The operator peer, or a marked restricted peer for non-loopback requests. */
 function dshPeerForRequest(service, request) {
@@ -162,7 +155,6 @@ const gatewayHelpers = `/* deepseek-harness-docker: controlled remote configurat
  * openWireStream/dispatchRpc, so the same endpoint policy enforced on HTTP RPC
  * applies here. */
 const DSH_GATEWAY_REMOTE_CONFIGURATION_METHODS = ${setLiteral(REMOTE_CONFIGURATION_METHODS)};
-const DSH_GATEWAY_LOOPBACK_ONLY_METHODS = ${setLiteral(LOOPBACK_ONLY_METHODS)};
 const DSH_GATEWAY_REMOTE_RESTRICTED = Symbol.for("deepseek-harness-docker.remote-restricted");
 function dshGatewayEndpointForbidden(endpoint, peer) {
 \tif (peer == null || peer[DSH_GATEWAY_REMOTE_RESTRICTED] !== true) return false;
@@ -170,7 +162,7 @@ function dshGatewayEndpointForbidden(endpoint, peer) {
 \tif (DSH_GATEWAY_REMOTE_CONFIGURATION_METHODS.has(endpoint)) {
 \t\treturn process.env.DSH_ALLOW_REMOTE_CONFIGURATION !== "1";
 \t}
-\treturn DSH_GATEWAY_LOOPBACK_ONLY_METHODS.has(endpoint);
+\treturn true;
 }
 /**
 * Resolve strict generated definitions or conservative SRC markers against`

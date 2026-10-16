@@ -171,7 +171,9 @@ jobs:
           mint_cookie() { # $1=port $2=host-authority $3=container $4=cookie-jar
             local launch_token=""
             for _ in {1..12}; do
-              launch_token=$(docker logs "$3" 2>&1 | sed -n '/dsh web:/s/.*token=\([^ ]*\).*/\1/p' | head -1)
+            # The startup line looks like `dsh web: http://127.0.0.1:3081/?token=<token>`
+            # and may carry a ` (LAN: ...)` suffix; take the first token occurrence.
+            launch_token=$(docker logs "$3" 2>&1 | grep -o 'token=[^ )]*' | head -1 | cut -d= -f2)
               if [[ -n "$launch_token" ]]; then
                 break
               fi
@@ -215,28 +217,22 @@ jobs:
             exit 1
           fi
 
-          unauth_status=$(curl --silent --show-error --max-time 5 \
-            --output /dev/null --write-out '%{http_code}' \
-            --header 'Host: dsh-smoke.example' \
-            --header 'Content-Type: application/json' \
-            --data "$(rpc_body agentPresets/list)" \
-            "http://127.0.0.1:${secure_port}/api/agentPresets/list")
-          if [[ "$unauth_status" != "401" ]]; then
-            echo "Unauthenticated request was not rejected: HTTP $unauth_status" >&2
+          # Fail-closed: endpoints outside the provider configuration plane stay
+          # loopback-only for trusted hosts, even when authenticated.
+          unlisted_status=$(rpc_status "$secure_jar" "$secure_port" dsh-smoke.example agentPresets/list)
+          if [[ "$unlisted_status" != "403" ]]; then
+            echo "Non-configuration endpoint was exposed remotely: HTTP $unlisted_status" >&2
             exit 1
           fi
 
-          presets_response=$(curl --fail --silent --show-error --max-time 5 \
-            --cookie "$secure_jar" --cookie-jar "$secure_jar" \
-            --header 'Host: dsh-smoke.example' \
-            --header 'Origin: https://dsh-smoke.example' \
-            --header 'Sec-Fetch-Site: same-origin' \
-            --header 'Content-Type: application/json' \
-            --data "$(rpc_body agentPresets/list)" \
-            "http://127.0.0.1:${secure_port}/api/agentPresets/list")
-          jq --exit-status \
-            '.type == "server-response" and .result.ok == true' \
-            <<<"$presets_response" >/dev/null
+          # Loopback keeps full access, including endpoints closed to remotes.
+          loopback_jar=$(mktemp)
+          mint_cookie "$secure_port" 127.0.0.1 "$secure_container" "$loopback_jar"
+          loopback_status=$(rpc_status "$loopback_jar" "$secure_port" 127.0.0.1 agentPresets/list)
+          if [[ "$loopback_status" != "200" ]]; then
+            echo "Loopback request was not served: HTTP $loopback_status" >&2
+            exit 1
+          fi
           docker rm --force "$secure_container" >/dev/null
 
           docker run --detach \
@@ -266,6 +262,18 @@ jobs:
             '.type == "server-response" and .result.ok == true and (.result.value.namespaces | type == "array")' \
             <<<"$settings_response" >/dev/null
 
+          # Browser authentication is enforced even where the endpoint is open.
+          unauth_status=$(curl --silent --show-error --max-time 5 \
+            --output /dev/null --write-out '%{http_code}' \
+            --header 'Host: dsh-smoke.example' \
+            --header 'Content-Type: application/json' \
+            --data "$(rpc_body settings/describe)" \
+            "http://127.0.0.1:${host_port}/api/settings/describe")
+          if [[ "$unauth_status" != "401" ]]; then
+            echo "Unauthenticated request was not rejected: HTTP $unauth_status" >&2
+            exit 1
+          fi
+
           credentials_status=$(rpc_status "$jar" "$host_port" dsh-smoke.example credentials/describe)
           if [[ "$credentials_status" != "200" ]]; then
             echo "Remote credentials plane was not opened by the opt-in: HTTP $credentials_status" >&2
@@ -287,6 +295,14 @@ jobs:
           picker_status=$(rpc_status "$jar" "$host_port" dsh-smoke.example directoryPicker/pick)
           if [[ "$picker_status" != "403" ]]; then
             echo "Native directory picker was exposed remotely: HTTP $picker_status" >&2
+            exit 1
+          fi
+
+          # The opt-in opens the configuration plane only: terminals stay
+          # loopback-only for trusted hosts.
+          terminal_status=$(rpc_status "$jar" "$host_port" dsh-smoke.example terminal/create)
+          if [[ "$terminal_status" != "403" ]]; then
+            echo "Terminal endpoint was exposed remotely: HTTP $terminal_status" >&2
             exit 1
           fi
 
