@@ -4,11 +4,12 @@ services:
   deepseek-harness:
     build:
       context: .
-    image: ${DEEPSEEK_HARNESS_IMAGE:-alliot/deepseek-harness:0.1.0-rc.8}
+    image: ${DEEPSEEK_HARNESS_IMAGE:-alliot/deepseek-harness:0.2.0-rc.2}
     restart: unless-stopped
     ports:
-      # DeepSeek Harness has no authentication and can execute commands. Keep
-      # the published port on the Docker host's loopback interface.
+      # DeepSeek Harness can execute commands in the workspace. The web UI
+      # requires browser authentication, but keep the published port on the
+      # Docker host's loopback interface anyway.
       - "127.0.0.1:${DSH_HOST_PORT:-3080}:3080"
     environment:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
