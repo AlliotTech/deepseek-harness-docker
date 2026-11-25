@@ -17,25 +17,25 @@
 两个 Registry 发布相同的 `linux/amd64`、`linux/arm64` OCI manifest。推荐固定容器发行版标签部署：
 
 ```bash
-docker pull ghcr.io/alliottech/deepseek-harness:0.2.0-rc.2
+docker pull ghcr.io/alliottech/deepseek-harness:0.2.2-rc.5
 # 或
-docker pull alliot/deepseek-harness:0.2.0-rc.2
+docker pull alliot/deepseek-harness:0.2.2-rc.5
 ```
 
 可用标签：
 
-- `0.2.0-rc.2`：容器发行版；使用上游 DeepSeek Harness `0.2.0-rc.2`，包含 Web 启动修复和受控的远程提供方配置支持，推荐部署使用。
-- `dsh-0.2.0-rc.2`：使用该上游版本的最新容器构建；包装层修复发布时会更新，是可变标签。
+- `0.2.2-rc.5`：容器发行版；使用上游 DeepSeek Harness `0.2.2-rc.5`，远程提供方配置补丁已针对该版本复核（本地 14 项断言通过），默认关闭、可选开启，推荐部署使用。
+- `dsh-0.2.2-rc.5`：使用该上游版本的最新容器构建；包装层修复发布时会更新，是可变标签。
 - `master`：本仓库默认分支的最新构建，是可变标签。
 - `sha-<commit>`：对应本仓库具体 Git commit，例如包含 Web 启动修复的 `sha-6ed1d92`。
 - `latest`：最新 `v*` 容器发行版；方便试用，但严格固定部署应使用完整发行版标签或 digest。
 
 > [!IMPORTANT]
-> 早期的 `0.1.0-rc.6` 系列容器发行版存在 Web 子进程缺少 `--expose-internals` 的启动缺陷，以及反向代理下配置面返回 HTTP 403 的问题，均已在 `0.1.0-rc.6.2` 修复。当前推荐使用基于上游 `0.2.0-rc.2` 的 `0.2.0-rc.2` 标签。如果此前拉取过 `dsh-0.1.0-rc.6` 或 `master` 可变标签，需要重新执行 `docker pull` 并重建容器，Docker 不会自动替换本地旧镜像。
+> 早期的 `0.1.0-rc.6` 系列容器发行版存在 Web 子进程缺少 `--expose-internals` 的启动缺陷，以及反向代理下配置面返回 HTTP 403 的问题，均已在 `0.1.0-rc.6.2` 修复。当前推荐使用基于上游 `0.2.2-rc.5` 的 `0.2.2-rc.5` 标签。如果此前拉取过 `dsh-0.1.0-rc.6` 或 `master` 可变标签，需要重新执行 `docker pull` 并重建容器，Docker 不会自动替换本地旧镜像。
 
 ## 可部署性结论
 
-可以容器化部署。截至 2026-08-14，上游默认分支提交 `47f943859bef60e4160492346772ded9b24f765a` 提供 npm 包和源码运行方式，但仓库中没有 Dockerfile、Compose 文件，也未发现官方 GHCR/Docker Hub 镜像。上游要求 Node.js `^22.19.0 || >=24.0.0`，Web UI、配置和会话数据都能放入标准 Linux 容器；其 Linux 原生组件支持 `amd64` 与 `arm64`。
+可以容器化部署。截至 2026-08-14，上游默认分支提交 `47f943859bef60e4160492346772ded9b24f765a` 提供 npm 包和源码运行方式，但仓库中没有 Dockerfile、Compose 文件，也未发现官方 GHCR/Docker Hub 镜像。上游要求 Node.js `>=24.9.0`（`0.2.2-rc.5` 的 engines 字段），Web UI、配置和会话数据都能放入标准 Linux 容器；其 Linux 原生组件支持 `amd64` 与 `arm64`。
 
 本镜像直接安装上游发布的 `@deepseek-ai/dsh` npm 包，而不是复制上游源码构建链。依赖由 `package-lock.json` 固定，基础镜像按 digest 固定，运行时使用 Node.js 24、非 root 用户、Tini、健康检查，并在发布时生成多架构镜像、SBOM 和 provenance。
 
@@ -69,7 +69,7 @@ docker run --rm -it \
   -e DEEPSEEK_API_KEY \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  alliot/deepseek-harness:0.2.0-rc.2
+  alliot/deepseek-harness:0.2.2-rc.5
 ```
 
 `/home/node/.dsh` 保存配置、凭据、插件和会话；`/workspace` 是 Agent 默认操作的项目目录。只挂载你允许 Agent 读取和修改的目录。
@@ -106,7 +106,7 @@ docker run --rm -it \
   --mount type=bind,src="$PWD/deepseek_api_key",dst=/run/secrets/deepseek_api_key,readonly \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  alliot/deepseek-harness:0.2.0-rc.2
+  alliot/deepseek-harness:0.2.2-rc.5
 ```
 
 ## 其他运行模式
@@ -114,9 +114,9 @@ docker run --rm -it \
 查看版本或帮助：
 
 ```bash
-docker run --rm alliot/deepseek-harness:0.2.0-rc.2 --version
-docker run --rm alliot/deepseek-harness:0.2.0-rc.2 --help
-docker run --rm alliot/deepseek-harness:0.2.0-rc.2 web --help
+docker run --rm alliot/deepseek-harness:0.2.2-rc.5 --version
+docker run --rm alliot/deepseek-harness:0.2.2-rc.5 --help
+docker run --rm alliot/deepseek-harness:0.2.2-rc.5 web --help
 ```
 
 运行一次 headless 任务：
@@ -126,7 +126,7 @@ docker run --rm -it \
   -e DEEPSEEK_API_KEY \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  alliot/deepseek-harness:0.2.0-rc.2 \
+  alliot/deepseek-harness:0.2.2-rc.5 \
   --profile headless "分析当前项目并运行测试"
 ```
 
@@ -172,7 +172,7 @@ docker run --rm -it \
   -e DSH_ALLOW_REMOTE_CONFIGURATION=1 \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  alliot/deepseek-harness:0.2.0-rc.2
+  alliot/deepseek-harness:0.2.2-rc.5
 ```
 
 值只能是逗号分隔的 `host` 或 `host:port`，不要填写 `https://`、路径或通配符。无端口的 hostname 可匹配该主机的任意端口；例如 `DSH_TRUSTED_HOSTS=dsh.example.com,192.168.1.20`。反向代理应保留原始 `Host`，例如 Nginx 使用 `proxy_set_header Host $host;`。
@@ -232,8 +232,8 @@ GHCR 使用 GitHub 自动提供的 `GITHUB_TOKEN`，工作流已经声明 `packa
 容器发行版使用 SemVer。上游预发布版本保持在前缀中，最后一位表示本仓库的容器包装修订，例如：
 
 ```bash
-git tag -a v0.2.0-rc.2 -m "DeepSeek Harness 0.2.0-rc.2 容器发行版"
-git push origin v0.2.0-rc.2
+git tag -a v0.2.2-rc.5 -m "DeepSeek Harness 0.2.2-rc.5 容器发行版"
+git push origin v0.2.2-rc.5
 ```
 
 更新上游版本时，同时修改 `package.json`、`package-lock.json` 和 Dockerfile 中的 `DSH_VERSION` 默认值，然后完成本地镜像健康检查。Dependabot 已配置为跟踪 npm、基础镜像和 GitHub Actions 更新。
@@ -243,7 +243,7 @@ git push origin v0.2.0-rc.2
 默认镜像只附带 DeepSeek Harness 所需的 Node.js，以及 `bash`、Git、OpenSSH client 和 ripgrep。按项目需要派生镜像：
 
 ```dockerfile
-FROM ghcr.io/alliottech/deepseek-harness:0.2.0-rc.2
+FROM ghcr.io/alliottech/deepseek-harness:0.2.2-rc.5
 
 USER root
 RUN apt-get update \
