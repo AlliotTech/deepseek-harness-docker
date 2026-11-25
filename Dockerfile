@@ -18,7 +18,7 @@ RUN apt-get update \
 
 COPY package.json package-lock.json ./
 
-ARG DSH_VERSION=0.2.0-rc.2
+ARG DSH_VERSION=0.2.2-rc.5
 RUN test "$(node --print "require('./package.json').dependencies['@deepseek-ai/dsh']")" = "${DSH_VERSION}" \
     && npm ci --omit=dev --no-audit --no-fund \
     && npm cache clean --force
@@ -33,7 +33,7 @@ RUN node ./patches/enable-remote-configuration.mjs /opt/deepseek-harness \
 
 FROM ${NODE_IMAGE} AS runtime
 
-ARG DSH_VERSION=0.2.0-rc.2
+ARG DSH_VERSION=0.2.2-rc.5
 ARG VCS_REF=""
 ARG BUILD_DATE=""
 

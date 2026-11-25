@@ -17,25 +17,25 @@ This repository provides an unofficial Docker image for [DeepSeek Harness](https
 Both registries publish identical `linux/amd64` and `linux/arm64` OCI manifests. We recommend pinning a container release tag for deployment:
 
 ```bash
-docker pull ghcr.io/alliottech/deepseek-harness:0.2.0-rc.2
+docker pull ghcr.io/alliottech/deepseek-harness:0.2.2-rc.5
 # or
-docker pull alliot/deepseek-harness:0.2.0-rc.2
+docker pull alliot/deepseek-harness:0.2.2-rc.5
 ```
 
 Available tags:
 
-- `0.2.0-rc.2`: Container release; uses upstream DeepSeek Harness `0.2.0-rc.2` with the web startup fix and opt-in remote provider configuration support. Recommended for deployment.
-- `dsh-0.2.0-rc.2`: Latest container build for that upstream version; updated when wrapping-layer fixes are released. Mutable tag.
+- `0.2.2-rc.5`: Container release; uses upstream DeepSeek Harness `0.2.2-rc.5`. The remote provider configuration patch was re-checked against this version (14 local assertions pass); it stays off by default and opt-in. Recommended for deployment.
+- `dsh-0.2.2-rc.5`: Latest container build for that upstream version; updated when wrapping-layer fixes are released. Mutable tag.
 - `master`: Latest build of this repository's default branch. Mutable tag.
 - `sha-<commit>`: A specific Git commit of this repository, e.g. `sha-6ed1d92` (contains the web startup fix).
 - `latest`: Latest `v*` container release; convenient for trying things out, but use a full release tag or digest for strict pinning.
 
 > [!IMPORTANT]
-> The early `0.1.0-rc.6` container releases had a web-startup defect (the web subprocess was missing `--expose-internals`) and a reverse-proxy configuration-plane HTTP 403, both fixed by `0.1.0-rc.6.2`. The current recommended release is `0.2.0-rc.2` (upstream `0.2.0-rc.2`). If you previously pulled the `dsh-0.1.0-rc.6` or `master` mutable tags, re-run `docker pull` and recreate the container — Docker will not automatically replace old local images.
+> The early `0.1.0-rc.6` container releases had a web-startup defect (the web subprocess was missing `--expose-internals`) and a reverse-proxy configuration-plane HTTP 403, both fixed by `0.1.0-rc.6.2`. The current recommended release is `0.2.2-rc.5` (upstream `0.2.2-rc.5`). If you previously pulled the `dsh-0.1.0-rc.6` or `master` mutable tags, re-run `docker pull` and recreate the container — Docker will not automatically replace old local images.
 
 ## Deployability Assessment
 
-Containerized deployment is feasible. As of 2026-08-14, upstream default branch commit `47f943859bef60e4160492346772ded9b24f765a` provides npm package and source-based run modes, but the repository has no Dockerfile or Compose file, and no official GHCR/Docker Hub image was found. Upstream requires Node.js `^22.19.0 || >=24.0.0`; the web UI, configuration, and session data all fit in a standard Linux container, and its Linux native components support `amd64` and `arm64`.
+Containerized deployment is feasible. As of 2026-08-14, upstream default branch commit `47f943859bef60e4160492346772ded9b24f765a` provides npm package and source-based run modes, but the repository has no Dockerfile or Compose file, and no official GHCR/Docker Hub image was found. Upstream requires Node.js `>=24.9.0` (the `engines` field of `0.2.2-rc.5`); the web UI, configuration, and session data all fit in a standard Linux container, and its Linux native components support `amd64` and `arm64`.
 
 This image installs the published `@deepseek-ai/dsh` npm package directly rather than replicating the upstream build chain. Dependencies are pinned via `package-lock.json`, the base image is pinned by digest, and the runtime uses Node.js 24, a non-root user, Tini, and a health check. Multi-arch images, SBOMs, and provenance are generated at release time.
 
@@ -69,7 +69,7 @@ docker run --rm -it \
   -e DEEPSEEK_API_KEY \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  alliot/deepseek-harness:0.2.0-rc.2
+  alliot/deepseek-harness:0.2.2-rc.5
 ```
 
 `/home/node/.dsh` stores configuration, credentials, plugins, and sessions; `/workspace` is the project directory the Agent operates on by default. Only mount directories you are willing to let the Agent read and modify.
@@ -106,7 +106,7 @@ docker run --rm -it \
   --mount type=bind,src="$PWD/deepseek_api_key",dst=/run/secrets/deepseek_api_key,readonly \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  alliot/deepseek-harness:0.2.0-rc.2
+  alliot/deepseek-harness:0.2.2-rc.5
 ```
 
 ## Other Run Modes
@@ -114,9 +114,9 @@ docker run --rm -it \
 Show the version or help:
 
 ```bash
-docker run --rm alliot/deepseek-harness:0.2.0-rc.2 --version
-docker run --rm alliot/deepseek-harness:0.2.0-rc.2 --help
-docker run --rm alliot/deepseek-harness:0.2.0-rc.2 web --help
+docker run --rm alliot/deepseek-harness:0.2.2-rc.5 --version
+docker run --rm alliot/deepseek-harness:0.2.2-rc.5 --help
+docker run --rm alliot/deepseek-harness:0.2.2-rc.5 web --help
 ```
 
 Run a one-off headless task:
@@ -126,7 +126,7 @@ docker run --rm -it \
   -e DEEPSEEK_API_KEY \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  alliot/deepseek-harness:0.2.0-rc.2 \
+  alliot/deepseek-harness:0.2.2-rc.5 \
   --profile headless "Analyze the current project and run the tests"
 ```
 
@@ -172,7 +172,7 @@ docker run --rm -it \
   -e DSH_ALLOW_REMOTE_CONFIGURATION=1 \
   -v deepseek-harness-home:/home/node/.dsh \
   -v "$PWD:/workspace" \
-  alliot/deepseek-harness:0.2.0-rc.2
+  alliot/deepseek-harness:0.2.2-rc.5
 ```
 
 Values must be comma-separated `host` or `host:port` entries — no `https://` scheme, paths, or wildcards. A hostname without a port matches any port on that host; for example `DSH_TRUSTED_HOSTS=dsh.example.com,192.168.1.20`. The reverse proxy should preserve the original `Host` header, e.g. Nginx uses `proxy_set_header Host $host;`.
@@ -232,8 +232,8 @@ GHCR uses the `GITHUB_TOKEN` GitHub provides automatically, and the workflow alr
 Container releases use SemVer. The upstream pre-release version stays in the prefix and the last digit represents this repository's container wrapping revision, for example:
 
 ```bash
-git tag -a v0.2.0-rc.2 -m "DeepSeek Harness 0.2.0-rc.2 container release"
-git push origin v0.2.0-rc.2
+git tag -a v0.2.2-rc.5 -m "DeepSeek Harness 0.2.2-rc.5 container release"
+git push origin v0.2.2-rc.5
 ```
 
 When updating the upstream version, update `package.json`, `package-lock.json`, and the `DSH_VERSION` default in the Dockerfile at the same time, then complete the local image health check. Dependabot is configured to track npm, base image, and GitHub Actions updates.
@@ -243,7 +243,7 @@ When updating the upstream version, update `package.json`, `package-lock.json`, 
 The default image ships only the Node.js required by DeepSeek Harness, plus `bash`, Git, OpenSSH client, and ripgrep. Derive your own image as your project requires:
 
 ```dockerfile
-FROM ghcr.io/alliottech/deepseek-harness:0.2.0-rc.2
+FROM ghcr.io/alliottech/deepseek-harness:0.2.2-rc.5
 
 USER root
 RUN apt-get update \

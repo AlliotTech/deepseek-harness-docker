@@ -4,9 +4,10 @@ import { dirname, resolve } from 'node:path'
 
 // Controlled remote provider configuration for the container image.
 //
-// Upstream admits every request that passes the Host/Origin fence (loopback or
-// a configured trusted host) plus browser authentication as the operator, with
-// no per-endpoint restriction. This patch restores the container's policy:
+// Upstream admits every request that passes the Host/Origin fence (loopback,
+// the listener's bind address, or a configured trusted host) plus browser or
+// API-peer authentication as an owner Peer, with no per-endpoint restriction.
+// This patch restores the container's policy:
 //
 // - Loopback requests keep full access.
 // - Trusted non-loopback hosts reach only the provider configuration plane,
@@ -15,13 +16,17 @@ import { dirname, resolve } from 'node:path'
 //   directory picking, preset reads) stay loopback-only.
 //
 // Two transports carry RPC and both are gated:
-// - HTTP `/api/<endpoint>`: gated in HostConnectionService.requestRejection.
-// - The WebSocket stream carrier (`/api/remote.mux`): admit() marks the peer of
-//   non-loopback requests, and the Typert gateway applies the same endpoint
-//   policy to streams opened by a marked peer.
+// - HTTP `/api/<endpoint>`: gated in HostConnectionService.admit, which also
+//   hands non-loopback requests a restricted-marked peer instead of the raw
+//   admitted peer (requestRejection inherits the same policy via admit).
+// - The WebSocket stream carrier (`/api/remote.mux`): admitConnection marks
+//   the socket peer the same way, and the Typert gateway applies the same
+//   endpoint policy to streams opened by a marked peer.
 //
 // The patch is version-checked and fail-closed: every replacement must match
 // exactly once or the build aborts.
+//
+// Targets upstream @deepseek-ai/dsh 0.2.2-rc.5 (peer-based admission model).
 
 const defaultRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const root = resolve(process.argv[2] ?? defaultRoot)
@@ -69,7 +74,7 @@ const connectionHelpers = `/* deepseek-harness-docker: controlled remote configu
 const DSH_REMOTE_CONFIGURATION_METHODS = ${setLiteral(REMOTE_CONFIGURATION_METHODS)};
 const DSH_LOOPBACK_ONLY_PATH_PREFIXES = ${arrayLiteral(LOOPBACK_ONLY_PATH_PREFIXES)};
 const DSH_REMOTE_RESTRICTED = Symbol.for("deepseek-harness-docker.remote-restricted");
-const DSH_REMOTE_PEER = Symbol.for("deepseek-harness-docker.remote-peer");
+const DSH_REMOTE_WRAPPERS = Symbol.for("deepseek-harness-docker.remote-wrappers");
 function dshIsLoopbackRequest(request) {
 \tconst host = header$1(request.headers, "host");
 \tif (host === void 0) return false;
@@ -100,12 +105,22 @@ function dshRemoteRequestForbidden(request) {
 \t}
 \t// Fail-closed: a trusted non-loopback host reaches only the provider\n\t// configuration plane (plus the stream carrier, handled above). Every\n\t// other endpoint stays loopback-only even when not enumerated here.\n\treturn true;
 }
-/** The operator peer, or a marked restricted peer for non-loopback requests. */
-function dshPeerForRequest(service, request) {
-\tif (dshIsLoopbackRequest(request)) return service.operator;
-\treturn service[DSH_REMOTE_PEER] ??= Object.create(service.operator, {
-\t\t[DSH_REMOTE_RESTRICTED]: { value: true },
-\t});
+/**
+ * The peer to hand to this request's RPC handling. Loopback requests keep the
+ * admitted peer as-is; non-loopback requests get a stable restricted wrapper
+ * (one per underlying peer, cached on the service) so the shared browser peer
+ * is never mutated and gateway identity checks keep seeing a consistent object.
+ */
+function dshPeerForRequest(service, request, peer) {
+\tif (dshIsLoopbackRequest(request)) return peer;
+\tlet cache = service[DSH_REMOTE_WRAPPERS];
+\tif (cache === void 0) cache = service[DSH_REMOTE_WRAPPERS] = new WeakMap();
+\tlet wrapped = cache.get(peer);
+\tif (wrapped === void 0) {
+\t\twrapped = Object.create(peer, { [DSH_REMOTE_RESTRICTED]: { value: true } });
+\t\tcache.set(peer, wrapped);
+\t}
+\treturn wrapped;
 }
 /** Host registry and HTTP adapter for generic Connection RPC channels. */`
 
@@ -116,32 +131,41 @@ patchFile('node_modules/@deepseek-ai/dsh-client-connection/lib/index.js', [
     'remote configuration helpers',
   ],
   [
-    `\t/** Apply the configured Host/Origin fence, then browser authentication. */
-\trequestRejection(request) {
-\t\tif (!isTrustedApiRequest(request, this.trustedHosts)) return 403;
-\t\treturn this.browserAuth.isAuthenticated(request) ? void 0 : 401;
+    `\t/** Browser requests share an owner Peer; API HTTP does not depend on an attached socket. */
+\tadmit(request) {
+\t\tif (!this.isTrusted(request)) return { rejection: 403 };
+\t\tif (this.disposed) return { rejection: 401 };
+\t\tconst secure = this.owner.get("webServer")?.protocol === "https:";
+\t\tif (this.browserAuth.isAuthenticated(request, secure)) return { peer: this.browserPeer };
+\t\tconst id = this.browserAuth.authenticateApi(request, secure);
+\t\tconst record = id === void 0 ? void 0 : this.peers.get(id);
+\t\treturn record === void 0 ? { rejection: 401 } : { peer: record.peer };
 \t}`,
-    `\t/** Apply the configured Host/Origin fence, then browser authentication. */
-\trequestRejection(request) {
-\t\tif (!isTrustedApiRequest(request, this.trustedHosts)) return 403;
-\t\tif (dshRemoteRequestForbidden(request)) return 403;
-\t\treturn this.browserAuth.isAuthenticated(request) ? void 0 : 401;
+    `\t/** Browser requests share an owner Peer; API HTTP does not depend on an attached socket. */
+\tadmit(request) {
+\t\tif (!this.isTrusted(request)) return { rejection: 403 };
+\t\tif (dshRemoteRequestForbidden(request)) return { rejection: 403 };
+\t\tif (this.disposed) return { rejection: 401 };
+\t\tconst secure = this.owner.get("webServer")?.protocol === "https:";
+\t\tif (this.browserAuth.isAuthenticated(request, secure)) return { peer: dshPeerForRequest(this, request, this.browserPeer) };
+\t\tconst id = this.browserAuth.authenticateApi(request, secure);
+\t\tconst record = id === void 0 ? void 0 : this.peers.get(id);
+\t\treturn record === void 0 ? { rejection: 401 } : { peer: dshPeerForRequest(this, request, record.peer) };
 \t}`,
-    'remote configuration fence',
+    'admission fence and remote peer marking',
   ],
   [
-    `\t/** A request that passes the fence and authentication speaks for the operator. */
-\tadmit(request) {
-\t\tconst rejection = this.requestRejection(request);
-\t\treturn rejection === void 0 ? { peer: this.operator } : { rejection };
-\t}`,
-    `\t/** A request that passes the fence and authentication speaks for the operator. */
-\tadmit(request) {
-\t\tconst rejection = this.requestRejection(request);
-\t\tif (rejection !== void 0) return { rejection };
-\t\treturn { peer: dshPeerForRequest(this, request) };
-\t}`,
-    'remote peer marking',
+    `\t\tif (record.ownsSocket) return { rejection: 409 };
+\t\trecord.ownsSocket = true;
+\t\tlet released;
+\t\treturn {
+\t\t\tpeer: record.peer,`,
+    `\t\tif (record.ownsSocket) return { rejection: 409 };
+\t\trecord.ownsSocket = true;
+\t\tlet released;
+\t\treturn {
+\t\t\tpeer: dshPeerForRequest(this, request, record.peer),`,
+    'socket peer marking',
   ],
 ])
 
@@ -185,9 +209,9 @@ patchFile('node_modules/@deepseek-ai/dsh-api-gateway/lib/index.js', [
     'stream carrier unary gate',
   ],
   [
-    `\tasync openWireStream(endpoint, payload, uplink, peer, signal, control) {
+    `\tasync openWireStream(endpoint, payload, uplink, peer, signal, control, uplinkWindow) {
 \t\tif (endpoint === "$events") {`,
-    `\tasync openWireStream(endpoint, payload, uplink, peer, signal, control) {
+    `\tasync openWireStream(endpoint, payload, uplink, peer, signal, control, uplinkWindow) {
 \t\tif (dshGatewayEndpointForbidden(endpoint, peer)) {
 \t\t\tthrow new TypertGatewayError("gateway/forbidden", endpoint, "remote requests may not open this endpoint");
 \t\t}

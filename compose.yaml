@@ -4,7 +4,7 @@ services:
   deepseek-harness:
     build:
       context: .
-    image: ${DEEPSEEK_HARNESS_IMAGE:-alliot/deepseek-harness:0.2.0-rc.2}
+    image: ${DEEPSEEK_HARNESS_IMAGE:-alliot/deepseek-harness:0.2.2-rc.5}
     restart: unless-stopped
     ports:
       # DeepSeek Harness can execute commands in the workspace. The web UI
